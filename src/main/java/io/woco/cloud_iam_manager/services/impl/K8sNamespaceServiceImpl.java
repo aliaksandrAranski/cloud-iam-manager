@@ -12,7 +12,11 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * The type K 8 s namespace service.
+ * Kubernetes namespace service implementation.
+ * Responsible for discovering and filtering namespaces based on labels.
+ * 
+ * This service helps scope the IAM management to specific namespaces only,
+ * preventing the system from managing IAM bindings across the entire cluster.
  */
 @RequiredArgsConstructor
 @Service
@@ -21,6 +25,7 @@ public class K8sNamespaceServiceImpl implements K8sNamespaceService {
 
     /**
      * Retrieves all Kubernetes namespaces that match the specified label.
+     * This is used to determine which namespaces should have their service accounts managed.
      *
      * @param k8sConfig the configuration containing the label to watch for namespaces
      * @return a list of namespace names that match the specified label
@@ -31,15 +36,25 @@ public class K8sNamespaceServiceImpl implements K8sNamespaceService {
         LogUtil.debug("Retrieving all namespaces by label: '" + k8sConfig.getNamespaceLabelToWatch() + "'");
 
         V1NamespaceList namespaceList;
+        
+        // Special case: "all" means manage every namespace in the cluster
         if (k8sConfig.getNamespaceLabelToWatch().equalsIgnoreCase("all")) {
+            // Retrieve all namespaces without label filtering
             namespaceList = coreV1Api.listNamespace().timeoutSeconds(10).execute();
         } else {
+            // Retrieve only namespaces matching the specified label selector
+            // Label selector format: "key=value" or "key" or "key in (value1,value2)"
             namespaceList = coreV1Api.listNamespace().labelSelector(k8sConfig.getNamespaceLabelToWatch()).timeoutSeconds(10).execute();
         }
 
+        // Filter and extract namespace names, ensuring metadata integrity
         return namespaceList.getItems()
                 .stream()
-                .filter(namespace -> namespace.getMetadata() != null && namespace.getMetadata().getName() != null && !namespace.getMetadata().getName().isEmpty())
+                // Safety check: ensure namespace has proper metadata and name
+                .filter(namespace -> namespace.getMetadata() != null && 
+                                   namespace.getMetadata().getName() != null && 
+                                   !namespace.getMetadata().getName().isEmpty())
+                // Extract just the namespace name (string) from the metadata
                 .map(namespace -> namespace.getMetadata().getName())
                 .toList();
     }
