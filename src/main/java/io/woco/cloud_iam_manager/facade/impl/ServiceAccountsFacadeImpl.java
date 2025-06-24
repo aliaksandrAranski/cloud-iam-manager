@@ -50,8 +50,6 @@ public class ServiceAccountsFacadeImpl implements ServiceAccountsFacade {
      */
     @Override
     public void sync(boolean useCache) throws ApiException {
-        System.out.println("cache = " + cache);
-
         // Step 1: Discover target namespaces based on labels
         List<String> namespaces = k8sNamespaceService.getAllNamespacesByLabel(k8sConfig);
         if (namespaces == null || namespaces.isEmpty()) {
