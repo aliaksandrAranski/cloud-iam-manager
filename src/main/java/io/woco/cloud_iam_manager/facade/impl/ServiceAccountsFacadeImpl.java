@@ -17,7 +17,7 @@ import java.util.*;
 
 /**
  * Main orchestration service for managing IAM bindings for Kubernetes service accounts.
- * 
+ * <p>
  * This facade coordinates the entire workflow:
  * 1. Discovers namespaces and service accounts
  * 2. Filters service accounts by IAM annotation
@@ -25,7 +25,7 @@ import java.util.*;
  * 4. Binds service accounts to cloud IAM roles
  * 5. Cleans up obsolete IAM bindings
  * 6. Handles errors and creates audit events
- * 
+ * <p>
  * The service acts as the main entry point for IAM synchronization operations.
  */
 @RequiredArgsConstructor
@@ -38,18 +38,20 @@ public class ServiceAccountsFacadeImpl implements ServiceAccountsFacade {
     private final CloudConfig cloudConfig;
 
     // Cache to track service account -> IAM role mappings to avoid redundant operations
-    // Key: service account name, Value: IAM role/resource ID
+    // Key: service account namespace/name, Value: IAM role/resource ID
     private static final Map<String, String> cache = new HashMap<>();
 
     /**
      * Synchronizes Kubernetes service accounts with cloud IAM bindings.
      * This is the main entry point for the IAM management workflow.
-     * 
+     *
      * @param useCache Whether to use caching to skip unchanged service accounts
      * @throws ApiException if Kubernetes API operations fail
      */
     @Override
     public void sync(boolean useCache) throws ApiException {
+        System.out.println("cache = " + cache);
+
         // Step 1: Discover target namespaces based on labels
         List<String> namespaces = k8sNamespaceService.getAllNamespacesByLabel(k8sConfig);
         if (namespaces == null || namespaces.isEmpty()) {
@@ -78,7 +80,7 @@ public class ServiceAccountsFacadeImpl implements ServiceAccountsFacade {
                         serviceAccount.getMetadata().getAnnotations().containsKey(k8sConfig.getSaIamAnnotation()) &&
                         serviceAccount.getMetadata().getAnnotations().get(k8sConfig.getSaIamAnnotation()) != null
         ).toList();
-        
+
         // Keep a copy of all service accounts for cleanup operations
         List<V1ServiceAccount> originalServiceAccounts = new ArrayList<>(serviceAccounts);
 
@@ -88,7 +90,7 @@ public class ServiceAccountsFacadeImpl implements ServiceAccountsFacade {
         if (useCache) {
             // Clean up cache entries for service accounts that no longer exist
             Set<String> cacheServiceAccountsNames = new HashSet<>(cache.keySet());
-            List<String> clusterSaNames = serviceAccounts.stream().map(serviceAccount -> serviceAccount.getMetadata().getName()).toList();
+            List<String> clusterSaNames = serviceAccounts.stream().map(serviceAccount -> serviceAccount.getMetadata().getNamespace() + "/" + serviceAccount.getMetadata().getName()).toList();
             cacheServiceAccountsNames.forEach(name -> {
                 if (!clusterSaNames.contains(name)) {
                     cache.remove(name);
@@ -98,7 +100,7 @@ public class ServiceAccountsFacadeImpl implements ServiceAccountsFacade {
             // Filter out service accounts that haven't changed since last sync
             List<V1ServiceAccount> changedServiceAccounts = new ArrayList<>();
             for (V1ServiceAccount serviceAccount : serviceAccounts) {
-                String serviceAccountRoleCache = cache.get(serviceAccount.getMetadata().getName());
+                String serviceAccountRoleCache = cache.get(serviceAccount.getMetadata().getNamespace() + "/" + serviceAccount.getMetadata().getName());
 
                 // Skip if the IAM role annotation hasn't changed
                 if (serviceAccountRoleCache != null && serviceAccountRoleCache.equals(serviceAccount.getMetadata().getAnnotations().get(k8sConfig.getSaIamAnnotation()))) {
@@ -157,7 +159,7 @@ public class ServiceAccountsFacadeImpl implements ServiceAccountsFacade {
                 }
 
                 // Update cache with successful binding
-                cache.put(serviceAccount.getMetadata().getName(), role);
+                cache.put(serviceAccount.getMetadata().getNamespace() + "/" + serviceAccount.getMetadata().getName(), role);
             } catch (Exception e) {
                 // Log error and create Kubernetes event for audit trail
                 LogUtil.error("Error while binding IAM to ServiceAccount: '" + serviceAccount.getMetadata().getName() +
